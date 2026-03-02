@@ -1,44 +1,37 @@
-public class HeapSort extends Sort{
-
-    int heaplenght;
+public class HeapSort extends Sort {
+    int heapLength;
 
     @Override
     public void sort(int[] array) {
-        heaplenght = array.length;
-        BuildMaxHeap(array);
-        int end = array.length-1;
-        while (heaplenght != 0 && end >= 0){
+        heapLength = array.length;
+        buildMaxHeap(array);
+        int end = array.length - 1;
+        while (heapLength != 0 && end >= 0) {
             swap(array, 0, end);
             interchanges++;
             end--;
-            heaplenght--;
-            MaxHeapify(0, array);
+            heapLength--;
+            maxHeapify(0, array);
         }
     }
 
-    private void BuildMaxHeap(int[] array){
-        for (int i = array.length/2; i >= 0; i--) {
-            MaxHeapify(i, array);
+    private void buildMaxHeap(int[] array) {
+        for (int i = array.length / 2; i >= 0; i--) {
+            maxHeapify(i, array);
         }
     }
 
-    private void MaxHeapify(int i, int[] array){
-        int l = left(i);
-        int r = right(i);
+    private void maxHeapify(int i, int[] array) {
+        int l = (2 * i) + 1;
+        int r = (2 * i) + 2;
         int largest = i;
-        if(r < heaplenght && array[r] > array[i]){
-            largest = r;
-        }
-        if(l < heaplenght && array[l] > array[largest]){largest = l;}
-        comparisons+=2;
-        if(largest != i){
+        if (r < heapLength && array[r] > array[i]) largest = r;
+        if (l < heapLength && array[l] > array[largest]) largest = l;
+        comparisons += 2;
+        if (largest != i) {
             swap(array, i, largest);
             interchanges++;
-            MaxHeapify(largest, array);
+            maxHeapify(largest, array);
         }
     }
-
-    private int left(int i){return (2*i)+1;}
-
-    private int right(int i){return (2*i)+2;}
 }
