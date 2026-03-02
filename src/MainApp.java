@@ -873,17 +873,70 @@ public class MainApp extends Application {
                 }
             };
 
-            case "Heap Sort" -> new HeapSort() {
-                @Override public void swap(int[] a,int i,int j) {
-                    super.swap(a,i,j);
-                    steps.add(Arrays.copyOf(a,a.length)); pairs.add(new int[]{i,j}); compFlags.add(false);
+            case "Heap Sort" -> new Sort() {
+                int heapLength;
+                @Override public void sort(int[] array) {
+                    heapLength = array.length;
+                    buildMaxHeap(array);
+                    int end = array.length - 1;
+                    while (heapLength != 0 && end >= 0) {
+                        swap(array, 0, end); interchanges++;
+                        end--; heapLength--;
+                        maxHeapify(0, array);
+                    }
+                    compCount[0] = comparisons;
+                }
+                @Override public void swap(int[] a, int i, int j) {
+                    super.swap(a, i, j);
+                    steps.add(Arrays.copyOf(a, a.length)); pairs.add(new int[]{i, j}); compFlags.add(false);
+                }
+                void buildMaxHeap(int[] array) {
+                    for (int i = array.length / 2; i >= 0; i--) maxHeapify(i, array);
+                }
+                void maxHeapify(int i, int[] array) {
+                    int l = (2 * i) + 1, r = (2 * i) + 2, largest = i;
+                    if (r < heapLength) {
+                        comparisons++; compCount[0]++;
+                        steps.add(Arrays.copyOf(array, array.length));
+                        pairs.add(new int[]{r, i}); compFlags.add(true);
+                        if (array[r] > array[i]) largest = r;
+                    }
+                    if (l < heapLength) {
+                        comparisons++; compCount[0]++;
+                        steps.add(Arrays.copyOf(array, array.length));
+                        pairs.add(new int[]{l, largest}); compFlags.add(true);
+                        if (array[l] > array[largest]) largest = l;
+                    }
+                    if (largest != i) { swap(array, i, largest); interchanges++; maxHeapify(largest, array); }
                 }
             };
 
-            case "Quick Sort" -> new QuickSort() {
-                @Override public void swap(int[] a,int i,int j) {
-                    super.swap(a,i,j);
-                    steps.add(Arrays.copyOf(a,a.length)); pairs.add(new int[]{i,j}); compFlags.add(false);
+            case "Quick Sort" -> new Sort() {
+                @Override public void sort(int[] array) {
+                    partition(array, 0, array.length - 1);
+                    compCount[0] = comparisons;
+                }
+                @Override public void swap(int[] a, int i, int j) {
+                    super.swap(a, i, j);
+                    steps.add(Arrays.copyOf(a, a.length)); pairs.add(new int[]{i, j}); compFlags.add(false);
+                }
+                void partition(int[] array, int l, int h) {
+                    if (l >= h) return;
+                    // use middle element as pivot to avoid worst-case on sorted input
+                    int pivotIndex = l + (h - l) / 2;
+                    int p = array[pivotIndex];
+                    swap(array, pivotIndex, l);
+                    int i = l, j = l + 1;
+                    while (j <= h) {
+                        comparisons++; compCount[0]++;
+                        steps.add(Arrays.copyOf(array, array.length));
+                        pairs.add(new int[]{j, l}); compFlags.add(true);
+                        if (array[j] >= p) { j++; }
+                        else { i++; swap(array, i, j); j++; interchanges++; }
+                    }
+                    if (i != l) { swap(array, i, l); interchanges++; }
+                    partition(array, l, i - 1);
+                    partition(array, i + 1, h);
                 }
             };
 
