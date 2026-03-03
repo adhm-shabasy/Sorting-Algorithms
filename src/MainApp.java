@@ -27,11 +27,11 @@ public class MainApp extends Application {
     private ObservableList<ComparisonResult> comparisonData = FXCollections.observableArrayList();
     private CheckBox[] algoCheckboxes;
     private final String[] ALGO_NAMES = {"Selection Sort","Insertion Sort","Bubble Sort",
-                                          "Merge Sort","Heap Sort","Quick Sort"};
+            "Merge Sort","Heap Sort","Quick Sort"};
     private RadioButton rbRandom, rbSorted, rbInverseSorted, rbFile;
     private TextField sizeField, runsField, boundField;
     private Label fileLabel;
-    private String selectedFilePath = null;
+    private List<File> selectedFiles = new ArrayList<>();
     private ProgressBar compProgressBar;
     private Label compStatusLabel;
     private Button runCompBtn;
@@ -91,9 +91,9 @@ public class MainApp extends Application {
         tabPane = new TabPane();
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
         tabPane.getTabs().addAll(
-            new Tab("Sorting Comparison",    buildComparisonTab()),
-            new Tab("Sorting Visualization", buildVisualizationTab()),
-            new Tab("Dual Visualization",    buildDualVisualizationTab())
+                new Tab("Sorting Comparison",    buildComparisonTab()),
+                new Tab("Sorting Visualization", buildVisualizationTab()),
+                new Tab("Dual Visualization",    buildDualVisualizationTab())
         );
         Scene scene = new Scene(tabPane, 1300, 720);
         stage.setTitle("Sorting Algorithms – CSE224");
@@ -136,12 +136,12 @@ public class MainApp extends Application {
         runsField  = new TextField("5");
         fileLabel  = new Label("No file selected");
         fileLabel.setStyle("-fx-text-fill:gray;-fx-font-size:11;");
-        Button chooseFileBtn = new Button("Choose File…");
+        Button chooseFileBtn = new Button("Choose File(s)…");
         chooseFileBtn.disableProperty().bind(rbFile.selectedProperty().not());
         chooseFileBtn.setOnAction(e -> chooseCompFile());
         inputBox.getChildren().addAll(rbRandom,rbSorted,rbInverseSorted,rbFile,
-            lf("Size (max 10000):",sizeField), lf("Bound:",boundField),
-            lf("Runs:",runsField), chooseFileBtn, fileLabel);
+                lf("Size (max 10000):",sizeField), lf("Bound:",boundField),
+                lf("Runs:",runsField), chooseFileBtn, fileLabel);
         inputPane.setContent(inputBox);
 
         runCompBtn = new Button("▶  Run Comparison");
@@ -160,11 +160,11 @@ public class MainApp extends Application {
         TableView<ComparisonResult> table = new TableView<>(comparisonData);
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         table.getColumns().addAll(
-            col("Algorithm","algorithm",120), col("Array Size","arraySize",80),
-            col("Input Type","inputType",110), col("Runs","runs",50),
-            col("Avg Time (ms)","avgTime",95), col("Min Time (ms)","minTime",95),
-            col("Max Time (ms)","maxTime",95), col("Comparisons","comparisons",100),
-            col("Interchanges","interchanges",100)
+                col("Algorithm","algorithm",120), col("Array Size","arraySize",80),
+                col("Input Type","inputType",110), col("Runs","runs",50),
+                col("Avg Time (ms)","avgTime",95), col("Min Time (ms)","minTime",95),
+                col("Max Time (ms)","maxTime",95), col("Comparisons","comparisons",100),
+                col("Interchanges","interchanges",100)
         );
         root.setLeft(controls); root.setCenter(table);
         return root;
@@ -175,30 +175,39 @@ public class MainApp extends Application {
         for (int i=0;i<algoCheckboxes.length;i++)
             if (algoCheckboxes[i].isSelected()) selected.add(ALGO_NAMES[i]);
         if (selected.isEmpty()) { alert("No algorithm selected."); return; }
-        int size,runs,bound;
+        int size, runs, bound;
         try {
             size  = Integer.parseInt(sizeField.getText().trim());
             runs  = Integer.parseInt(runsField.getText().trim());
             bound = Integer.parseInt(boundField.getText().trim());
             if (size<1||runs<1||bound<1) throw new NumberFormatException();
         } catch (NumberFormatException ex) { alert("Invalid numeric input."); return; }
-        if (rbFile.isSelected() && selectedFilePath==null) { alert("Please choose a file."); return; }
+        if (rbFile.isSelected() && selectedFiles.isEmpty()) { alert("Please choose at least one file."); return; }
+
         runCompBtn.setDisable(true);
         compProgressBar.setProgress(0);
         compStatusLabel.setText("Running…");
         int total = selected.size();
         int[] done = {0};
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(total,6));
+
         for (String algoName : selected) {
+            // capture finals for lambda
+            final int fSize = size, fRuns = runs, fBound = bound;
             Task<ComparisonResult> task = new Task<>() {
                 @Override protected ComparisonResult call() throws Exception {
                     Sort sorter = createSorter(algoName);
-                    int[] baseArray = buildArray(rbFile.isSelected()?selectedFilePath:null,
-                        size, bound, rbSorted.isSelected()?1:rbInverseSorted.isSelected()?2:0);
-                    long[] times = new long[runs];
+                    boolean useFiles = rbFile.isSelected() && !selectedFiles.isEmpty();
+                    int effectiveRuns = useFiles ? selectedFiles.size() : fRuns;
+                    long[] times = new long[effectiveRuns];
                     long totalComp=0, totalInter=0;
-                    for (int r=0;r<runs;r++) {
-                        int[] arr = Arrays.copyOf(baseArray,baseArray.length);
+                    int lastSize = 0;
+                    for (int r=0; r<effectiveRuns; r++) {
+                        int[] baseArray = useFiles
+                                ? buildArray(selectedFiles.get(r).getAbsolutePath(), fSize, fBound, 0)
+                                : buildArray(null, fSize, fBound, rbSorted.isSelected()?1:rbInverseSorted.isSelected()?2:0);
+                        lastSize = baseArray.length;
+                        int[] arr = Arrays.copyOf(baseArray, baseArray.length);
                         sorter.reset();
                         long t0 = System.nanoTime();
                         sorter.sort(arr);
@@ -209,15 +218,17 @@ public class MainApp extends Application {
                     long min = Arrays.stream(times).min().getAsLong();
                     long max = Arrays.stream(times).max().getAsLong();
                     double avg = Arrays.stream(times).average().getAsDouble();
-                    String inputType = rbFile.isSelected() ? new File(selectedFilePath).getName()
-                        : rbSorted.isSelected() ? "Sorted"
-                        : rbInverseSorted.isSelected() ? "Inversely Sorted" : "Random";
-                    return new ComparisonResult(algoName, String.valueOf(baseArray.length),
-                        inputType, String.valueOf(runs),
-                        String.format("%.4f", avg/1_000_000.0),
-                        String.format("%.4f", min/1_000_000.0),
-                        String.format("%.4f", max/1_000_000.0),
-                        String.valueOf(totalComp/runs), String.valueOf(totalInter/runs));
+                    String inputType = useFiles
+                            ? (selectedFiles.size()==1 ? selectedFiles.get(0).getName() : selectedFiles.size()+" files")
+                            : rbSorted.isSelected() ? "Sorted"
+                            : rbInverseSorted.isSelected() ? "Inversely Sorted" : "Random";
+                    return new ComparisonResult(algoName, String.valueOf(lastSize),
+                            inputType, String.valueOf(effectiveRuns),
+                            String.format("%.4f", avg/1_000_000.0),
+                            String.format("%.4f", min/1_000_000.0),
+                            String.format("%.4f", max/1_000_000.0),
+                            String.valueOf(totalComp/effectiveRuns),
+                            String.valueOf(totalInter/effectiveRuns));
                 }
             };
             task.setOnSucceeded(e -> Platform.runLater(() -> {
@@ -266,7 +277,7 @@ public class MainApp extends Application {
             if (f!=null) { vizFilePath=f.getAbsolutePath(); vizFileLabel.setText(f.getName()); }
         });
         controls.getChildren().addAll(vizRbRandom,vizRbSorted,vizRbInverseSorted,vizRbFile,
-            lf("Size (max 100):",vizSizeField), vizChooseFile, vizFileLabel);
+                lf("Size (max 100):",vizSizeField), vizChooseFile, vizFileLabel);
 
         Button generateBtn = new Button("⚙  Generate & Load");
         generateBtn.setMaxWidth(Double.MAX_VALUE);
@@ -304,8 +315,8 @@ public class MainApp extends Application {
         legend.setStyle("-fx-font-size:11;");
 
         controls.getChildren().addAll(generateBtn, playPauseBtn,
-            stepFwdBtn, stepBckBtn, resetVizBtn,
-            vizStatusLabel, vizComparisonsLabel, vizInterchangesLabel, legend);
+                stepFwdBtn, stepBckBtn, resetVizBtn,
+                vizStatusLabel, vizComparisonsLabel, vizInterchangesLabel, legend);
 
         canvas = new Canvas(800, 600);
         Pane canvasPane = new Pane(canvas);
@@ -331,7 +342,7 @@ public class MainApp extends Application {
         int[] base;
         try {
             base = buildArray(vizRbFile.isSelected()?vizFilePath:null, size, 1000,
-                vizRbSorted.isSelected()?1:vizRbInverseSorted.isSelected()?2:0);
+                    vizRbSorted.isSelected()?1:vizRbInverseSorted.isSelected()?2:0);
         } catch (Exception ex) { alert("Error: "+ex.getMessage()); return; }
         if (base.length>100) base = Arrays.copyOf(base,100);
 
@@ -387,7 +398,6 @@ public class MainApp extends Application {
         stopAudio();
     }
 
-    /** FIX 2: flush audio buffer so sound stops immediately */
     private void stopAudio() {
         audioShouldStop = true;
         if (audioLine != null) audioLine.flush();
@@ -415,7 +425,6 @@ public class MainApp extends Application {
         drawOnCanvas(canvas, vizSteps.get(vizStepIndex), currentHighlight, isCompStep.get(vizStepIndex));
     }
 
-    /** Shared drawing logic used by both single and dual viz */
     private void drawOnCanvas(Canvas c, int[] arr, int[] highlight, boolean isComparison) {
         GraphicsContext gc = c.getGraphicsContext2D();
         double w = c.getWidth(), h = c.getHeight();
@@ -438,7 +447,6 @@ public class MainApp extends Application {
         }
     }
 
-    /** FIX 3: count comparison steps in the step list rather than a static field */
     private void updateVizLabels() {
         vizStatusLabel.setText("Step: "+vizStepIndex+" / "+(vizSteps.size()-1));
         long comps=0, swaps=0;
@@ -456,7 +464,7 @@ public class MainApp extends Application {
             AudioFormat fmt = new AudioFormat(44100, 16, 1, true, false);
             DataLine.Info info = new DataLine.Info(SourceDataLine.class, fmt);
             audioLine = (SourceDataLine) AudioSystem.getLine(info);
-            audioLine.open(fmt, 2048); // small buffer = less lag on stop
+            audioLine.open(fmt, 2048);
             audioLine.start();
         } catch (Exception e) { audioLine = null; }
     }
@@ -503,8 +511,8 @@ public class MainApp extends Application {
         dualAlgoComboB = new ComboBox<>(FXCollections.observableArrayList(ALGO_NAMES));
         dualAlgoComboB.getSelectionModel().select(1);
         controls.getChildren().addAll(
-            new Label("Algorithm A:"), dualAlgoComboA,
-            new Label("Algorithm B:"), dualAlgoComboB);
+                new Label("Algorithm A:"), dualAlgoComboA,
+                new Label("Algorithm B:"), dualAlgoComboB);
 
         ToggleGroup dtg = new ToggleGroup();
         dualRbRandom        = rb("Random",          dtg, true);
@@ -522,7 +530,7 @@ public class MainApp extends Application {
             if (f!=null) { dualFilePath=f.getAbsolutePath(); dualFileLabel.setText(f.getName()); }
         });
         controls.getChildren().addAll(dualRbRandom,dualRbSorted,dualRbInverseSorted,dualRbFile,
-            lf("Size (max 100):",dualSizeField), dualChooseFile, dualFileLabel);
+                lf("Size (max 100):",dualSizeField), dualChooseFile, dualFileLabel);
 
         Button dualGenerateBtn = new Button("⚙  Generate & Load Both");
         dualGenerateBtn.setMaxWidth(Double.MAX_VALUE);
@@ -556,9 +564,8 @@ public class MainApp extends Application {
         Label dualLegend = new Label("Yellow = Comparison   Red = Swap");
         dualLegend.setStyle("-fx-font-size:11;");
         controls.getChildren().addAll(dualGenerateBtn, dualPlayPauseBtn,
-            dualStepFwd, dualStepBck, dualReset, dualLegend);
+                dualStepFwd, dualStepBck, dualReset, dualLegend);
 
-        // canvas setup
         canvasA = new Canvas(); canvasB = new Canvas();
         dualStatusLabelA = new Label("Step: 0 / 0"); dualStatusLabelB = new Label("Step: 0 / 0");
         dualCompLabelA   = new Label("Comparisons: 0"); dualCompLabelB = new Label("Comparisons: 0");
@@ -604,23 +611,21 @@ public class MainApp extends Application {
         int[] base;
         try {
             base = buildArray(dualRbFile.isSelected()?dualFilePath:null, size, 1000,
-                dualRbSorted.isSelected()?1:dualRbInverseSorted.isSelected()?2:0);
+                    dualRbSorted.isSelected()?1:dualRbInverseSorted.isSelected()?2:0);
         } catch (Exception ex) { alert("Error: "+ex.getMessage()); return; }
         if (base.length>100) base = Arrays.copyOf(base,100);
 
-        // Build A
         dualStepsA=new ArrayList<>(); dualHighlightA=new ArrayList<>(); dualIsCompA=new ArrayList<>();
         dualStepsA.add(Arrays.copyOf(base,base.length)); dualHighlightA.add(null); dualIsCompA.add(false);
         long[] cA={0};
         buildCapturingSorter(dualAlgoComboA.getValue(), dualStepsA, dualHighlightA, dualIsCompA, cA)
-            .sort(Arrays.copyOf(base,base.length));
+                .sort(Arrays.copyOf(base,base.length));
 
-        // Build B
         dualStepsB=new ArrayList<>(); dualHighlightB=new ArrayList<>(); dualIsCompB=new ArrayList<>();
         dualStepsB.add(Arrays.copyOf(base,base.length)); dualHighlightB.add(null); dualIsCompB.add(false);
         long[] cB={0};
         buildCapturingSorter(dualAlgoComboB.getValue(), dualStepsB, dualHighlightB, dualIsCompB, cB)
-            .sort(Arrays.copyOf(base,base.length));
+                .sort(Arrays.copyOf(base,base.length));
 
         dualStepIndexA=0; dualStepIndexB=0;
         dualPlayPauseBtn.setDisable(false);
@@ -688,13 +693,11 @@ public class MainApp extends Application {
     }
 
     private void updateDualLabels() {
-        updatePanelLabels(dualStepsA, dualHighlightA, dualIsCompA, dualStepIndexA,
-            dualStatusLabelA, dualCompLabelA, dualInterLabelA);
-        updatePanelLabels(dualStepsB, dualHighlightB, dualIsCompB, dualStepIndexB,
-            dualStatusLabelB, dualCompLabelB, dualInterLabelB);
+        updatePanelLabels(dualStepsA, dualHighlightA, dualIsCompA, dualStepIndexA, dualStatusLabelA, dualCompLabelA, dualInterLabelA);
+        updatePanelLabels(dualStepsB, dualHighlightB, dualIsCompB, dualStepIndexB, dualStatusLabelB, dualCompLabelB, dualInterLabelB);
     }
     private void updatePanelLabels(List<int[]> steps, List<int[]> hi, List<Boolean> comp,
-            int idx, Label status, Label compL, Label interL) {
+                                   int idx, Label status, Label compL, Label interL) {
         if (steps.isEmpty()) return;
         status.setText("Step: "+idx+" / "+(steps.size()-1));
         long c=0, s=0;
@@ -736,8 +739,12 @@ public class MainApp extends Application {
     private void chooseCompFile() {
         FileChooser fc = new FileChooser();
         fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Text files","*.txt","*.csv","*.*"));
-        File f = fc.showOpenDialog(tabPane.getScene().getWindow());
-        if (f!=null) { selectedFilePath=f.getAbsolutePath(); fileLabel.setText(f.getName()); }
+        List<File> files = fc.showOpenMultipleDialog(tabPane.getScene().getWindow());
+        if (files != null && !files.isEmpty()) {
+            selectedFiles = files;
+            fileLabel.setText(files.size()==1 ? files.get(0).getName() : files.size()+" files selected");
+            runsField.setText(String.valueOf(files.size()));
+        }
     }
     private int[] buildArray(String filePath, int size, int bound, int op) throws IOException {
         if (filePath!=null) {
@@ -762,14 +769,9 @@ public class MainApp extends Application {
 
     // =========================================================================
     //  STEP-CAPTURING SORT
-    //
-    //  FIX 1 – Merge Sort: capture every array write in merge(), not just swaps
-    //  FIX 3 – Comparisons: record a step tagged isComp=true for every comparison
-    //  FIX 4 – Sorted arrays: comparison steps are generated even when no swaps occur,
-    //           so the visualization animates through the checking process
     // =========================================================================
     private static Sort buildCapturingSorter(String name,
-            List<int[]> steps, List<int[]> pairs, List<Boolean> compFlags, long[] compCount) {
+                                             List<int[]> steps, List<int[]> pairs, List<Boolean> compFlags, long[] compCount) {
         return switch(name) {
 
             case "Selection Sort" -> new SelectionSort() {
@@ -827,8 +829,6 @@ public class MainApp extends Application {
                 }
             };
 
-            // Merge Sort: uses index ranges on the FULL array so every snapshot
-            // always shows all n bars, never a subarray.
             case "Merge Sort" -> new Sort() {
                 int[] full;
                 @Override public void sort(int[] array) {
@@ -844,23 +844,20 @@ public class MainApp extends Application {
                     merge(lo, mid, hi);
                 }
                 void merge(int lo, int mid, int hi) {
-                    // Copy the two regions into temp buffers, then write back into full[]
                     int[] left  = Arrays.copyOfRange(full, lo, mid + 1);
                     int[] right = Arrays.copyOfRange(full, mid + 1, hi + 1);
                     int i = 0, j = 0, k = lo;
                     while (i < left.length && j < right.length) {
                         comparisons++; compCount[0]++;
-                        // comparison step: yellow-highlight the two candidates
                         steps.add(Arrays.copyOf(full, full.length));
                         pairs.add(new int[]{lo + i, mid + 1 + j}); compFlags.add(true);
                         if (left[i] <= right[j]) full[k++] = left[i++];
                         else                     full[k++] = right[j++];
                         interchanges++;
-                        // write step: red-highlight the position just written
                         steps.add(Arrays.copyOf(full, full.length));
                         pairs.add(new int[]{k - 1, k - 1}); compFlags.add(false);
                     }
-                    while (i < left.length)  {
+                    while (i < left.length) {
                         full[k] = left[i++]; interchanges++;
                         steps.add(Arrays.copyOf(full, full.length));
                         pairs.add(new int[]{k, k}); compFlags.add(false); k++;
@@ -922,7 +919,6 @@ public class MainApp extends Application {
                 }
                 void partition(int[] array, int l, int h) {
                     if (l >= h) return;
-                    // use middle element as pivot to avoid worst-case on sorted input
                     int pivotIndex = l + (h - l) / 2;
                     int p = array[pivotIndex];
                     swap(array, pivotIndex, l);
@@ -949,7 +945,7 @@ public class MainApp extends Application {
     // =========================================================================
     public static class ComparisonResult {
         private final SimpleStringProperty algorithm,arraySize,inputType,runs,
-            avgTime,minTime,maxTime,comparisons,interchanges;
+                avgTime,minTime,maxTime,comparisons,interchanges;
         public ComparisonResult(String a,String b,String c,String d,String e,
                                 String f,String g,String h,String ii){
             algorithm=new SimpleStringProperty(a); arraySize=new SimpleStringProperty(b);

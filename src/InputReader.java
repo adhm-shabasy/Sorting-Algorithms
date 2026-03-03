@@ -11,10 +11,19 @@ public class InputReader {
             String line;
             while ((line = reader.readLine()) != null) {
                 if (line.trim().isEmpty()) continue;
-                String[] parts = line.split(",");
+                // Strip bracket/brace/paren characters so [1,2,3] and (1 2 3) also work
+                line = line.replaceAll("[\\[\\](){}]", "");
+                // Split on commas and/or whitespace so "1,2,3" and "1 2 3" both work
+                String[] parts = line.split("[,\\s]+");
                 for (String part : parts) {
                     String trimmed = part.trim();
-                    if (!trimmed.isEmpty()) numbers.add(Integer.parseInt(trimmed));
+                    if (!trimmed.isEmpty()) {
+                        try {
+                            numbers.add(Integer.parseInt(trimmed));
+                        } catch (NumberFormatException ignored) {
+                            // skip non-numeric tokens silently
+                        }
+                    }
                 }
             }
         }
