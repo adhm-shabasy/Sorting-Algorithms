@@ -1,7 +1,4 @@
 @echo off
-REM ──────────────────────────────────────────────────────────────────────────────
-REM build_and_run.bat  –  Uses JavaFX 21.0.6 jars from Maven local repository
-REM ──────────────────────────────────────────────────────────────────────────────
 
 SET FX=C:\Users\Egypt\.m2\repository\org\openjfx
 SET FX_VER=21.0.6
